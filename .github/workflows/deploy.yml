@@ -1,0 +1,54 @@
+# Met en ligne sur GitHub Pages, à chaque modification de la branche main :
+#   - le site NatureEmoi (à la racine)        → https://m3q8.github.io/NatureEMoi/
+#   - l'app de musculation (dossier muscu/)   → https://m3q8.github.io/NatureEMoi/muscu/
+# À faire une seule fois : Settings → Pages → Source : « GitHub Actions ».
+name: Mise en ligne (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: muscu/package-lock.json
+      - name: Construire l'app muscu
+        working-directory: muscu
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Assembler le site
+        run: |
+          mkdir -p _site/muscu
+          cp -r index.html css images _site/
+          cp -r muscu/dist/. _site/muscu/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
