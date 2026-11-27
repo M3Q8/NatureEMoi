@@ -4,7 +4,8 @@ import { deleteSet, restoreSession, updateSet } from '../../db/actions'
 import { useData } from '../../hooks/useData'
 import { useToast } from '../../components/Toast'
 import { Sheet } from '../../components/Sheet'
-import { Stepper } from '../../components/Stepper'
+import { SetInputs } from '../../components/SetInputs'
+import { Switch } from '../../components/Switch'
 import { IconTrash } from '../../components/Icons'
 
 interface Props {
@@ -19,15 +20,15 @@ export function EditSetSheet({ session, seId, setId, onClose }: Props) {
   const { exMap } = useData()
   const toast = useToast()
   const se = session.exercises.find((e) => e.id === seId)
-  const index = se?.sets.findIndex((s) => s.id === setId) ?? -1
-  const set = se?.sets[index]
+  const set = se?.sets.find((s) => s.id === setId)
   const snapshot = useRef(structuredClone(session))
   const changed = useRef(false)
-  const [vals, setVals] = useState({ weight: set?.weight ?? 0, reps: set?.reps ?? 1 })
+  const [vals, setVals] = useState({ weight: set?.weight ?? 0, reps: set?.reps ?? 1, warmup: !!set?.warmup })
   const ex = se ? exMap.get(se.exerciseId) : undefined
 
   if (!se || !set || !ex) return null
-  const n = index + 1
+  const n = se.sets.filter((s) => !s.warmup || s.id === setId).findIndex((s) => s.id === setId) + 1
+  const title = vals.warmup ? 'Échauffement' : `Série ${n}`
 
   const update = (patch: Partial<typeof vals>) => {
     setVals((v) => ({ ...v, ...patch }))
@@ -36,39 +37,27 @@ export function EditSetSheet({ session, seId, setId, onClose }: Props) {
   }
   const close = () => {
     onClose()
-    if (changed.current) toast.show(`Série ${n} modifiée`, () => restoreSession(snapshot.current))
+    if (changed.current) toast.show('Série modifiée', () => restoreSession(snapshot.current))
   }
   const remove = async () => {
     onClose()
     await deleteSet(session.id, seId, setId)
-    toast.show(`Série ${n} supprimée`, () => restoreSession(snapshot.current))
+    toast.show(vals.warmup ? 'Échauffement supprimé' : 'Série supprimée', () => restoreSession(snapshot.current))
   }
 
   return (
-    <Sheet open onClose={close} label={`Modifier la série ${n}`}>
+    <Sheet open onClose={close} label={`Modifier : ${title}`}>
       <div className="flex flex-col gap-3 px-4 pt-1 pb-2">
         <div className="px-1 pt-1">
-          <h2 className="text-[22px] font-extrabold tracking-tight">Série {n}</h2>
+          <h2 className="text-[22px] font-extrabold tracking-tight">{title}</h2>
           <p className="mt-0.5 text-[15px] text-muted">{ex.name}</p>
         </div>
-        <Stepper
-          label={ex.bodyweight ? 'Lest' : 'Poids'}
-          unit="kg"
-          decimal
-          step={2.5}
-          max={999}
-          stepLabel="2,5 kg"
-          value={vals.weight}
-          onChange={(weight) => update({ weight })}
-        />
-        <Stepper
-          label="Répétitions"
-          step={1}
-          min={1}
-          max={999}
-          stepLabel="1 répétition"
-          value={vals.reps}
-          onChange={(reps) => update({ reps })}
+        <SetInputs ex={ex} weight={vals.weight} reps={vals.reps} onChange={update} />
+        <Switch
+          label="Série d’échauffement"
+          hint="Ne compte pas dans les records ni le volume"
+          checked={vals.warmup}
+          onChange={(warmup) => update({ warmup })}
         />
         <div className="mt-1 grid grid-cols-2 gap-2.5">
           <button

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MUSCLE_GROUPS, type MuscleGroup } from '../db/db'
+import { MUSCLE_GROUPS, type ExerciseKind, type MuscleGroup } from '../db/db'
 import { useData } from '../hooks/useData'
 import { normalize } from '../lib/format'
 
@@ -7,6 +7,8 @@ export interface ExerciseValues {
   name: string
   group: MuscleGroup
   bodyweight: boolean
+  kind?: ExerciseKind
+  note?: string
 }
 
 interface Props {
@@ -57,10 +59,35 @@ export function ExerciseForm({ initial, submitLabel, onSubmit, onCancel, editing
                 key={g}
                 type="button"
                 aria-pressed={on}
-                onClick={() => setV({ ...v, group: g })}
+                onClick={() => setV({ ...v, group: g, kind: g === 'Cardio' ? 'time' : v.kind })}
                 className={`press h-11 rounded-xl text-[15px] font-semibold ${on ? 'bg-ink text-bg' : 'bg-control text-ink'}`}
               >
                 {g}
+              </button>
+            )
+          })}
+        </div>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 px-1 text-[13px] font-bold tracking-[0.06em] text-muted uppercase">Mesure</legend>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ['reps', 'Répétitions'],
+              ['time', 'Durée'],
+            ] as const
+          ).map(([k, label]) => {
+            const on = (v.kind ?? 'reps') === k
+            return (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setV({ ...v, kind: k })}
+                className={`press h-11 rounded-xl text-[15px] font-semibold ${on ? 'bg-ink text-bg' : 'bg-control text-ink'}`}
+              >
+                {label}
               </button>
             )
           })}
@@ -82,6 +109,17 @@ export function ExerciseForm({ initial, submitLabel, onSubmit, onCancel, editing
           <span className={`h-[27px] w-[27px] rounded-full bg-white shadow transition-transform ${v.bodyweight ? 'translate-x-5' : ''}`} />
         </span>
       </button>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="px-1 text-[13px] font-bold tracking-[0.06em] text-muted uppercase">Note (facultatif)</span>
+        <textarea
+          value={v.note ?? ''}
+          onChange={(e) => setV({ ...v, note: e.target.value })}
+          rows={2}
+          placeholder="Réglage de la machine, prise…"
+          className="resize-none rounded-[14px] border border-line bg-well p-3 text-[17px] leading-snug text-ink outline-none focus:border-accent"
+        />
+      </label>
 
       <div className="mt-1 grid grid-cols-2 gap-2.5">
         <button type="button" onClick={onCancel} className="press h-14 rounded-2xl bg-control text-[17px] font-bold">

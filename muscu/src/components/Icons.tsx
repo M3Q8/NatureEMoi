@@ -66,3 +66,10 @@ export const IconArrowUp = (p: P) => <Svg strokeWidth={2.8} {...p}><path d="M12 
 export const IconArrowDown = (p: P) => <Svg strokeWidth={2.8} {...p}><path d="M12 5v14M6 13l6 6 6-6" /></Svg>
 export const IconPencil = (p: P) => <Svg {...p}><path d="M4 20h4L19 9l-4-4L4 16v4z" /><path d="M13.5 6.5l4 4" /></Svg>
 export const IconShield = (p: P) => <Svg {...p}><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z" /></Svg>
+export const IconTimer = (p: P) => <Svg {...p}><circle cx="12" cy="13.5" r="7.5" /><path d="M12 9.5v4l2.5 1.5M9.5 2.5h5M12 2.5V6" /></Svg>
+export const IconClose = (p: P) => <Svg strokeWidth={2.6} {...p}><path d="M6 6l12 12M18 6L6 18" /></Svg>
+export const IconNote = (p: P) => <Svg {...p}><path d="M5 4h10l4 4v12H5z" /><path d="M14 4v5h5M8.5 13h7M8.5 16.5h5" /></Svg>
+export const IconPlates = (p: P) => <Svg {...p}><path d="M2.5 12h19" /><rect x="6" y="6" width="3" height="12" rx="1" /><rect x="15" y="6" width="3" height="12" rx="1" /></Svg>
+export const IconTarget = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="0.8" fill="currentColor" /></Svg>
+export const IconScale = (p: P) => <Svg {...p}><rect x="3.5" y="3.5" width="17" height="17" rx="4" /><path d="M8.5 9a5 5 0 0 1 7 0l-2 2.5" /></Svg>
+export const IconArrowUpDown = (p: P) => <Svg {...p}><path d="M8 4v16M4 8l4-4 4 4M16 20V4M12 16l4 4 4-4" /></Svg>

@@ -1,15 +1,23 @@
+import { useState } from 'react'
 import type { Session } from '../../db/db'
-import { resumeSession } from '../../db/actions'
+import { createTemplate, resumeSession } from '../../db/actions'
 import { useData } from '../../hooks/useData'
 import { Sheet } from '../../components/Sheet'
-import { IconCheck, IconTrophy } from '../../components/Icons'
+import { useToast } from '../../components/Toast'
+import { IconCheck, IconPlus, IconTrophy } from '../../components/Icons'
 import { fmtDayLong, fmtDuration, fmtInt, fmtTime, plural } from '../../lib/format'
 import { fmtMetric, recordsBroken, sessionTotals } from '../../lib/stats'
 
 /** Petit résumé de fin de séance. */
 export function SummarySheet({ session, onClose }: { session: Session; onClose: () => void }) {
   const { sessions, exMap } = useData()
-  const t = sessionTotals(session)
+  const toast = useToast()
+  const [naming, setNaming] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const t = sessionTotals(session, exMap)
+  const exerciseIds = session.exercises.filter((e) => e.sets.length > 0).map((e) => e.exerciseId)
+  const defaultName = [...new Set(exerciseIds.map((id) => exMap.get(id)?.group).filter(Boolean))].slice(0, 3).join(' · ')
+  const [name, setName] = useState(defaultName)
   const records = recordsBroken(session, sessions, exMap)
   const recordCount = records.reduce((n, r) => n + r.items.length, 0)
 
@@ -71,6 +79,48 @@ export function SummarySheet({ session, onClose }: { session: Session; onClose: 
       </div>
 
       <div className="flex shrink-0 flex-col gap-1 px-4 pt-2">
+        {naming ? (
+          <form
+            className="mb-2 flex flex-col gap-2 rounded-[18px] bg-raised p-3"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              const n = name.trim() || 'Ma séance'
+              await createTemplate(n, exerciseIds)
+              setNaming(false)
+              setSaved(true)
+              toast.show(`Séance type « ${n} » enregistrée`)
+            }}
+          >
+            <label className="px-1 text-[13px] font-bold tracking-[0.06em] text-muted uppercase" htmlFor="tpl-name">
+              Nom de la séance type
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="tpl-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                enterKeyHint="done"
+                className="h-12 min-w-0 flex-1 rounded-xl border border-line bg-well px-3 text-[17px] outline-none focus:border-accent"
+              />
+              <button type="submit" className="press h-12 shrink-0 rounded-xl bg-accent px-4 text-[16px] font-extrabold text-accent-ink">
+                Enregistrer
+              </button>
+            </div>
+          </form>
+        ) : (
+          exerciseIds.length > 0 && (
+            <button
+              type="button"
+              disabled={saved}
+              onClick={() => setNaming(true)}
+              className="press mb-2 flex h-12 items-center justify-center gap-2 rounded-2xl bg-control text-[15px] font-bold disabled:text-muted"
+            >
+              {saved ? <IconCheck size={18} className="text-accent" /> : <IconPlus size={18} className="text-accent" />}
+              {saved ? 'Enregistrée dans « Mes séances types »' : 'Enregistrer comme séance type'}
+            </button>
+          )
+        )}
         <button type="button" onClick={onClose} className="press h-16 rounded-[20px] bg-accent text-[18px] font-extrabold text-accent-ink">
           Fermer
         </button>

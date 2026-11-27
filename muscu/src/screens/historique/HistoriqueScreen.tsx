@@ -44,7 +44,7 @@ export function HistoriqueScreen() {
               {m.label} · {plural(m.items.length, 'séance', 'séances')}
             </h2>
             {m.items.map((s) => {
-              const t = sessionTotals(s)
+              const t = sessionTotals(s, exMap)
               const names = s.exercises
                 .filter((e) => e.sets.length > 0)
                 .map((e) => exMap.get(e.exerciseId)?.name)

@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { getMeta } from '../../db/db'
+import { db, getMeta, setMeta } from '../../db/db'
 import { addDemoData, deleteDemoData } from '../../db/actions'
 import { useData } from '../../hooks/useData'
 import { useToast } from '../../components/Toast'
 import { ConfirmSheet } from '../../components/Sheet'
-import { IconCheck, IconChevronRight, IconDownload, IconTrash, IconUpload, IconPlus } from '../../components/Icons'
+import { IconCheck, IconChevronRight, IconDownload, IconTrash, IconUpload, IconPlus, IconTimer } from '../../components/Icons'
 import { exportData, importData, parseBackup, saveBackupFile, type Backup } from '../../lib/backup'
-import { fmtDate, plural } from '../../lib/format'
+import { fmtDate, fmtSeconds, plural } from '../../lib/format'
 import { ExercisesManager } from './ExercisesManager'
+import { TemplatesManager } from './TemplatesManager'
+import type { ReglagesView } from '../../hooks/useNav'
+import { beep, unlockAudio } from '../../lib/sound'
 
 function Section({ title, children, footer }: { title: string; children: ReactNode; footer?: ReactNode }) {
   return (
@@ -55,21 +58,25 @@ function daysAgo(ts: number): string {
   return `il y a ${d} jours`
 }
 
-export function ReglagesScreen() {
+const REST_CHOICES = [0, 60, 90, 120, 180]
+
+export function ReglagesScreen({ view, onView }: { view: ReglagesView; onView: (v: ReglagesView) => void }) {
   const { exercises, sessions, hasDemo } = useData()
   const toast = useToast()
-  const [view, setView] = useState<'main' | 'exercises'>('main')
   const [persisted, setPersisted] = useState<boolean | null>(null)
   const [pendingImport, setPendingImport] = useState<Backup | null>(null)
   const [confirmDemo, setConfirmDemo] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const lastExportAt = useLiveQuery(() => getMeta<number>('lastExportAt'), [])
+  const restSeconds = useLiveQuery(() => getMeta<number>('restSeconds'), []) ?? 90
+  const templateCount = useLiveQuery(() => db.templates.count(), []) ?? 0
 
   useEffect(() => {
     navigator.storage?.persisted?.().then(setPersisted, () => setPersisted(null))
   }, [])
 
-  if (view === 'exercises') return <ExercisesManager onBack={() => setView('main')} />
+  if (view === 'exercises') return <ExercisesManager onBack={() => onView('main')} />
+  if (view === 'templates') return <TemplatesManager onBack={() => onView('main')} />
 
   const onExport = async () => {
     try {
@@ -104,12 +111,46 @@ export function ReglagesScreen() {
       <div className="scroll-area pt-safe flex-1 px-4 pb-24">
         <h1 className="mx-1 mt-3 text-[34px] font-extrabold tracking-tight">Réglages</h1>
 
-        <Section title="Exercices">
+        <Section title="Exercices et séances">
           <Row
             title="Mes exercices"
             sub={`${plural(visibleCount, 'exercice', 'exercices')}${customCount ? `, dont ${customCount} ajouté${customCount > 1 ? 's' : ''} par toi` : ''}`}
-            onClick={() => setView('exercises')}
+            onClick={() => onView('exercises')}
             right={<IconChevronRight size={20} className="shrink-0 text-muted" />}
+          />
+          <Row
+            title="Mes séances types"
+            sub={templateCount ? plural(templateCount, 'séance type', 'séances types') : 'Pecs, Jambes… à lancer en 1 tap'}
+            onClick={() => onView('templates')}
+            right={<IconChevronRight size={20} className="shrink-0 text-muted" />}
+          />
+        </Section>
+
+        <Section
+          title="Minuteur de repos"
+          footer="Il démarre tout seul après chaque série et sonne à la fin (si le téléphone n’est pas en mode silencieux)."
+        >
+          <div className="grid grid-cols-5 gap-1.5 bg-surface p-2" role="radiogroup" aria-label="Durée du repos">
+            {REST_CHOICES.map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="radio"
+                aria-checked={v === restSeconds}
+                onClick={() => setMeta('restSeconds', v)}
+                className={`press h-11 rounded-xl text-[15px] font-bold ${v === restSeconds ? 'bg-ink text-bg' : 'bg-control text-ink'}`}
+              >
+                {v ? fmtSeconds(v) : 'Aucun'}
+              </button>
+            ))}
+          </div>
+          <Row
+            icon={<IconTimer size={22} />}
+            title="Tester le bip"
+            onClick={() => {
+              unlockAudio()
+              beep()
+            }}
           />
         </Section>
 

@@ -1,7 +1,7 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { MetricDef } from '../../lib/stats'
 import { fmtMetric } from '../../lib/stats'
-import { fmtDate, fmtInt } from '../../lib/format'
+import { fmtDate, fmtNum1, fmtSeconds } from '../../lib/format'
 
 interface Point {
   date: number
@@ -41,8 +41,8 @@ export function ProgressChart({ data, def }: { data: Point[]; def: MetricDef }) 
           <YAxis
             width={44}
             domain={['auto', 'auto']}
-            allowDecimals={false}
-            tickFormatter={(v: number) => fmtInt(v)}
+            allowDecimals={def.unit === 'kg'}
+            tickFormatter={(v: number) => (def.unit === 's' ? fmtSeconds(v) : fmtNum1(v))}
             tick={{ fill: '#a1a1aa', fontSize: 12 }}
             axisLine={false}
             tickLine={false}

@@ -56,9 +56,11 @@ export function ExercisesManager({ onBack }: { onBack: () => void }) {
                 >
                   <span className="flex min-w-0 flex-col">
                     <span className="text-[17px] font-semibold">{e.name}</span>
-                    {(e.bodyweight || e.custom) && (
+                    {(e.bodyweight || e.custom || (e.kind === 'time' && e.group !== 'Cardio')) && (
                       <span className="text-[13px] text-muted">
-                        {[e.bodyweight && 'Poids du corps', e.custom && 'Ajouté par toi'].filter(Boolean).join(' · ')}
+                        {[e.kind === 'time' && e.group !== 'Cardio' && 'En durée', e.bodyweight && 'Poids du corps', e.custom && 'Ajouté par toi']
+                          .filter(Boolean)
+                          .join(' · ')}
                       </span>
                     )}
                   </span>
@@ -105,13 +107,13 @@ export function ExercisesManager({ onBack }: { onBack: () => void }) {
           <div className="scroll-area">
             <ExerciseForm
               editingId={editing.id}
-              initial={{ name: editing.name, group: editing.group, bodyweight: editing.bodyweight }}
+              initial={{ name: editing.name, group: editing.group, bodyweight: editing.bodyweight, kind: editing.kind ?? 'reps', note: editing.note ?? '' }}
               submitLabel="Valider"
               onCancel={() => setEditing(null)}
               onSubmit={async (v) => {
                 const before = editing
                 setEditing(null)
-                await updateExercise(before.id, v)
+                await updateExercise(before.id, { ...v, note: v.note?.trim() ? v.note : undefined })
                 toast.show('Exercice modifié', () => restoreExercise(before))
               }}
             />

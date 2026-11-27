@@ -6,10 +6,16 @@ Application personnelle pour noter ses séances de musculation et suivre sa prog
 Elle s'installe sur l'écran d'accueil de l'iPhone, fonctionne **hors connexion**, et garde
 toutes les données **uniquement sur le téléphone** (aucun compte, aucun serveur).
 
-- **Séance** : démarrer, ajouter des exercices, saisir les séries avec les boutons − / +, « Annuler » après chaque action, résumé en fin de séance, « Refaire une séance précédente ».
+- **Séance** : démarrer (vide, depuis une **séance type** ou en refaisant une séance précédente), saisir les séries avec les boutons − / +, « Annuler » après chaque action, résumé en fin de séance.
+  - **Minuteur de repos** automatique après chaque série (bip à la fin), réglable dans Réglages.
+  - **Séries d'échauffement** (exclues des records et du volume).
+  - **Objectif** proposé quand toutes les séries de la dernière fois ont été réussies (+2,5 kg, +1 rep, +5 s…).
+  - **Calculateur de disques** (quoi mettre de chaque côté de la barre).
+  - **Notes par exercice** (réglage de la machine, prise…).
+  - **Exercices en durée** : gainage, chaise, cardio.
 - **Historique** : toutes les séances, modifiables après coup.
-- **Progrès** : courbes (poids max, 1RM estimé, volume), records personnels, régularité.
-- **Réglages** : mes exercices, export / import de sauvegarde (JSON), données de démonstration.
+- **Progrès** : courbes par exercice et records personnels ; régularité et séries par groupe musculaire chaque semaine ; courbe du poids du corps.
+- **Réglages** : mes exercices, mes séances types, minuteur de repos, export / import de sauvegarde (JSON), données de démonstration.
 
 Technique : Vite + React + TypeScript, Tailwind CSS, Dexie (IndexedDB), Recharts, vite-plugin-pwa.
 
