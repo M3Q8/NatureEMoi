@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { db } from '../db/db'
+import Dexie from 'dexie'
+import { db, MuscuDB } from '../db/db'
 import {
-  addExerciseToSession, addSet, createExercise, deleteDemoData, deleteExercise, deleteSet,
+  addDemoData, addExerciseToSession, addSet, createExercise, deleteDemoData, deleteExercise, deleteSet,
   finishSession, getActiveSession, restoreSession, startSession, updateSet,
 } from '../db/actions'
 import { exportData, importData, parseBackup } from '../lib/backup'
@@ -12,8 +13,13 @@ beforeEach(async () => {
 })
 
 describe('premier lancement', () => {
-  it('contient la liste d’exercices et des données de démo', async () => {
+  it('démarre vide, avec seulement la liste d’exercices', async () => {
     expect(await db.exercises.count()).toBeGreaterThan(40)
+    expect(await db.sessions.count()).toBe(0)
+  })
+
+  it('les données de démo s’ajoutent depuis les réglages', async () => {
+    await addDemoData()
     const sessions = await db.sessions.toArray()
     expect(sessions.length).toBeGreaterThan(15)
     expect(sessions.every((s) => s.demo && s.endedAt !== null)).toBe(true)
@@ -23,8 +29,23 @@ describe('premier lancement', () => {
   })
 
   it('les données de démo se suppriment d’un coup', async () => {
+    await addDemoData()
     await deleteDemoData()
     expect(await db.sessions.count()).toBe(0)
+  })
+
+  it('la mise à jour retire les démos déjà présentes sur le téléphone, pas les vraies séances', async () => {
+    const name = 'muscu-ancienne-version'
+    const old = new Dexie(name)
+    old.version(1).stores({ exercises: 'id, name, group', sessions: 'id, startedAt', meta: 'key' })
+    await old.table('sessions').bulkAdd([
+      { id: 'demo1', startedAt: 1, endedAt: 2, exercises: [], demo: true },
+      { id: 'vraie', startedAt: 3, endedAt: 4, exercises: [] },
+    ])
+    old.close()
+    const updated = new MuscuDB(name)
+    expect((await updated.sessions.toArray()).map((s) => s.id)).toEqual(['vraie'])
+    updated.close()
   })
 })
 
@@ -54,6 +75,7 @@ describe('séance', () => {
   })
 
   it('refaire une séance précédente reprend les mêmes exercices', async () => {
+    await addDemoData()
     const previous = (await db.sessions.orderBy('startedAt').last())!
     const id = await startSession(previous)
     const s = (await db.sessions.get(id))!
@@ -80,6 +102,7 @@ describe('séance', () => {
 
 describe('exercices', () => {
   it('un exercice utilisé est masqué, pas effacé', async () => {
+    await addDemoData()
     expect(await deleteExercise('developpe-couche')).toBe('archived')
     expect((await db.exercises.get('developpe-couche'))?.archived).toBe(true)
     const id = await createExercise({ name: '  Hack squat ', group: 'Jambes', bodyweight: false })
@@ -90,6 +113,7 @@ describe('exercices', () => {
 
 describe('sauvegarde', () => {
   it('export puis import restaure tout', async () => {
+    await addDemoData()
     const backup = await exportData()
     const json = JSON.stringify(backup)
     await db.sessions.clear()

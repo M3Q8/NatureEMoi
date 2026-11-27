@@ -87,8 +87,8 @@ l'iPhone se met à jour d'elle-même à la prochaine ouverture avec Internet.
 - **Réglages → Exporter mes données** crée un fichier de sauvegarde : choisis **Enregistrer dans Fichiers**
   (iCloud Drive). Fais-le régulièrement ; l'app te le rappelle au bout d'un mois.
 - **Réglages → Importer une sauvegarde** restaure ce fichier (sur le même ou un nouveau téléphone).
-- Au premier lancement, l'app contient des **séances de démonstration** (pour voir les graphiques).
-  Supprime-les quand tu commences à t'en servir : bouton « Les supprimer » sur l'écran Séance, ou dans Réglages.
+- L'app démarre **vide**. Pour voir les graphiques avec des exemples : **Réglages → Ajouter des données de démo**
+  (elles se suppriment ensuite d'un geste, sans toucher à tes vraies séances).
 
 ---
 
