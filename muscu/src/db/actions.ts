@@ -1,4 +1,4 @@
-import { db, type Exercise, type MuscleGroup, type Session, type WorkSet } from './db'
+import { db, type BodyWeight, type Exercise, type ExerciseKind, type MuscleGroup, type Session, type Template, type WorkSet } from './db'
 import { uid } from '../lib/id'
 import { makeDemoSessions } from './demo'
 import { round2 } from '../lib/format'
@@ -28,14 +28,11 @@ export async function getActiveSession(): Promise<Session | undefined> {
   return all.filter((s) => s.endedAt === null).sort((a, b) => b.startedAt - a.startedAt)[0]
 }
 
-/** Démarre une séance (vide, ou avec les mêmes exercices qu'une séance précédente). */
-export async function startSession(template?: Session, now = Date.now()): Promise<string> {
+/** Démarre une séance : vide, ou avec une liste d'exercices (modèle, séance précédente). */
+export async function startSession(exerciseIds: string[] = [], now = Date.now()): Promise<string> {
   const active = await getActiveSession()
   if (active) return active.id
-  const seen = new Set<string>()
-  const exercises = (template?.exercises ?? [])
-    .filter((e) => (seen.has(e.exerciseId) ? false : (seen.add(e.exerciseId), true)))
-    .map((e) => ({ id: uid(), exerciseId: e.exerciseId, sets: [] as WorkSet[] }))
+  const exercises = [...new Set(exerciseIds)].map((exerciseId) => ({ id: uid(), exerciseId, sets: [] as WorkSet[] }))
   const session: Session = { id: uid(), startedAt: now, endedAt: null, exercises }
   await db.sessions.add(session)
   return session.id
@@ -62,19 +59,35 @@ export function removeExerciseFromSession(sessionId: string, seId: string) {
   })
 }
 
-export function addSet(sessionId: string, seId: string, values: { reps: number; weight: number }, now = Date.now()) {
+export function addSet(
+  sessionId: string,
+  seId: string,
+  values: { reps: number; weight: number; warmup?: boolean },
+  now = Date.now(),
+) {
   return mutate(sessionId, (s) => {
     const se = s.exercises.find((e) => e.id === seId)
-    se?.sets.push({ id: uid(), reps: Math.round(values.reps), weight: round2(values.weight), at: now })
+    const set: WorkSet = { id: uid(), reps: Math.round(values.reps), weight: round2(values.weight), at: now }
+    if (values.warmup) set.warmup = true
+    se?.sets.push(set)
   })
 }
 
-export function updateSet(sessionId: string, seId: string, setId: string, patch: Partial<Pick<WorkSet, 'reps' | 'weight'>>) {
+export function updateSet(
+  sessionId: string,
+  seId: string,
+  setId: string,
+  patch: Partial<Pick<WorkSet, 'reps' | 'weight' | 'warmup'>>,
+) {
   return mutate(sessionId, (s) => {
     const set = s.exercises.find((e) => e.id === seId)?.sets.find((x) => x.id === setId)
     if (!set) return
     if (patch.reps !== undefined) set.reps = Math.round(patch.reps)
     if (patch.weight !== undefined) set.weight = round2(patch.weight)
+    if (patch.warmup !== undefined) {
+      if (patch.warmup) set.warmup = true
+      else delete set.warmup
+    }
   })
 }
 
@@ -123,7 +136,15 @@ export async function deleteSession(sessionId: string): Promise<Session | undefi
 
 // ---------- Exercices ----------
 
-export async function createExercise(values: { name: string; group: MuscleGroup; bodyweight: boolean }): Promise<string> {
+export interface ExerciseInput {
+  name: string
+  group: MuscleGroup
+  bodyweight: boolean
+  kind?: ExerciseKind
+  note?: string
+}
+
+export async function createExercise(values: ExerciseInput): Promise<string> {
   const ex: Exercise = {
     id: uid(),
     name: values.name.trim(),
@@ -133,14 +154,21 @@ export async function createExercise(values: { name: string; group: MuscleGroup;
     archived: false,
     createdAt: Date.now(),
   }
+  if (values.kind === 'time') ex.kind = 'time'
+  if (values.note?.trim()) ex.note = values.note.trim()
   await db.exercises.add(ex)
   return ex.id
 }
 
-export async function updateExercise(id: string, patch: Partial<Pick<Exercise, 'name' | 'group' | 'bodyweight'>>) {
-  const clean = { ...patch }
+export async function updateExercise(id: string, patch: Partial<ExerciseInput>) {
+  const clean: Partial<Exercise> = { ...patch }
   if (clean.name !== undefined) clean.name = clean.name.trim()
   await db.exercises.update(id, clean)
+}
+
+/** Note d'un exercice (réglage machine, prise…). */
+export async function setExerciseNote(id: string, note: string) {
+  await db.exercises.update(id, { note: note.trim() ? note : undefined })
 }
 
 /** Supprime un exercice. S'il apparaît dans l'historique, il est seulement masqué de la liste. */
@@ -171,4 +199,49 @@ export async function deleteDemoData(): Promise<number> {
 export async function addDemoData(): Promise<void> {
   await deleteDemoData()
   await db.sessions.bulkAdd(makeDemoSessions())
+}
+
+// ---------- Modèles de séance ----------
+
+export async function createTemplate(name: string, exerciseIds: string[]): Promise<string> {
+  const t: Template = { id: uid(), name: name.trim() || 'Ma séance', exerciseIds: [...new Set(exerciseIds)], createdAt: Date.now() }
+  await db.templates.add(t)
+  return t.id
+}
+
+export async function updateTemplate(id: string, patch: Partial<Pick<Template, 'name' | 'exerciseIds'>>) {
+  await db.templates.update(id, patch)
+}
+
+export async function deleteTemplate(id: string): Promise<Template | undefined> {
+  const t = await db.templates.get(id)
+  if (t) await db.templates.delete(id)
+  return t
+}
+
+export async function restoreTemplate(t: Template) {
+  await db.templates.put(t)
+}
+
+// ---------- Poids du corps ----------
+
+/** Note le poids du jour (remplace la mesure déjà notée aujourd'hui). */
+export async function addBodyWeight(kg: number, now = Date.now()): Promise<{ entry: BodyWeight; replaced?: BodyWeight }> {
+  const d = new Date(now)
+  d.setHours(0, 0, 0, 0)
+  const dayStart = d.getTime()
+  const replaced = await db.bodyweights.where('date').between(dayStart, dayStart + 864e5, true, false).first()
+  const entry: BodyWeight = { id: replaced?.id ?? uid(), date: now, kg: round2(kg) }
+  await db.bodyweights.put(entry)
+  return { entry, replaced }
+}
+
+export async function deleteBodyWeight(id: string): Promise<BodyWeight | undefined> {
+  const b = await db.bodyweights.get(id)
+  if (b) await db.bodyweights.delete(id)
+  return b
+}
+
+export async function restoreBodyWeight(b: BodyWeight) {
+  await db.bodyweights.put(b)
 }

@@ -1,6 +1,6 @@
-import type { Exercise, MuscleGroup } from './db'
+import type { Exercise, ExerciseKind, MuscleGroup } from './db'
 
-type SeedRow = [id: string, name: string, bodyweight?: boolean]
+type SeedRow = [id: string, name: string, bodyweight?: boolean, kind?: ExerciseKind]
 
 const SEED: Record<MuscleGroup, SeedRow[]> = {
   Pectoraux: [
@@ -56,20 +56,32 @@ const SEED: Record<MuscleGroup, SeedRow[]> = {
     ['hip-thrust', 'Hip thrust'],
     ['mollets-debout', 'Mollets debout'],
     ['mollets-assis', 'Mollets assis'],
+    ['chaise', 'Chaise', true, 'time'],
   ],
   Abdos: [
     ['crunch', 'Crunch'],
     ['crunch-poulie', 'Crunch à la poulie'],
     ['releves-jambes', 'Relevés de jambes', true],
     ['roue-abdominale', 'Roue abdominale', true],
+    ['gainage', 'Gainage', true, 'time'],
+    ['gainage-lateral', 'Gainage latéral', true, 'time'],
+  ],
+  Cardio: [
+    ['tapis', 'Tapis de course', false, 'time'],
+    ['velo', 'Vélo', false, 'time'],
+    ['rameur', 'Rameur', false, 'time'],
+    ['elliptique', 'Vélo elliptique', false, 'time'],
+    ['corde', 'Corde à sauter', false, 'time'],
   ],
 }
 
 export function seedExercises(now = Date.now()): Exercise[] {
   const out: Exercise[] = []
   for (const [group, rows] of Object.entries(SEED) as [MuscleGroup, SeedRow[]][]) {
-    for (const [id, name, bodyweight] of rows) {
-      out.push({ id, name, group, bodyweight: !!bodyweight, custom: false, archived: false, createdAt: now })
+    for (const [id, name, bodyweight, kind] of rows) {
+      const ex: Exercise = { id, name, group, bodyweight: !!bodyweight, custom: false, archived: false, createdAt: now }
+      if (kind === 'time') ex.kind = 'time'
+      out.push(ex)
     }
   }
   return out

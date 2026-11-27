@@ -1,5 +1,7 @@
-import type { Exercise, Session, WorkSet } from '../db/db'
-import { fmtInt, fmtKg, fmtNum1 } from './format'
+import { MUSCLE_GROUPS, type Exercise, type MuscleGroup, type Session, type WorkSet } from '../db/db'
+import { fmtInt, fmtKg, fmtNum, fmtNum1, fmtSeconds } from './format'
+
+type ExLike = Pick<Exercise, 'bodyweight' | 'kind' | 'group'>
 
 /** 1RM estimé, formule d'Epley : poids × (1 + reps / 30) */
 export const epley = (weight: number, reps: number) => (reps > 0 ? weight * (1 + reps / 30) : 0)
@@ -8,26 +10,32 @@ export interface SetStats {
   maxWeight: number
   best1RM: number
   volume: number
+  /** répétitions (ou secondes) de la meilleure série */
   maxReps: number
+  /** total des répétitions (ou secondes) */
   totalReps: number
+  /** nombre de séries de travail (hors échauffement) */
   setCount: number
 }
 
-export function statsOfSets(sets: Pick<WorkSet, 'reps' | 'weight'>[]): SetStats {
+/** Statistiques des séries de travail (l'échauffement est ignoré). */
+export function statsOfSets(sets: Pick<WorkSet, 'reps' | 'weight' | 'warmup'>[]): SetStats {
   let maxWeight = 0
   let best1RM = 0
   let volume = 0
   let maxReps = 0
   let totalReps = 0
+  let setCount = 0
   for (const s of sets) {
-    if (s.reps <= 0) continue
+    if (s.warmup || s.reps <= 0) continue
+    setCount++
     maxWeight = Math.max(maxWeight, s.weight)
     best1RM = Math.max(best1RM, epley(s.weight, s.reps))
     volume += s.reps * s.weight
     maxReps = Math.max(maxReps, s.reps)
     totalReps += s.reps
   }
-  return { maxWeight, best1RM, volume, maxReps, totalReps, setCount: sets.length }
+  return { maxWeight, best1RM, volume, maxReps, totalReps, setCount }
 }
 
 export type MetricKey = 'maxWeight' | 'best1RM' | 'volume' | 'maxReps' | 'totalReps'
@@ -35,12 +43,21 @@ export type MetricKey = 'maxWeight' | 'best1RM' | 'volume' | 'maxReps' | 'totalR
 export interface MetricDef {
   key: MetricKey
   label: string
-  unit: 'kg' | 'reps'
+  unit: 'kg' | 'reps' | 's'
 }
 
-/** Les 3 indicateurs suivis. Au poids du corps, le poids vaut souvent 0 : on suit le lest et les répétitions. */
-export function metricsFor(bodyweight: boolean): MetricDef[] {
-  return bodyweight
+/** Les indicateurs suivis, selon le type d'exercice. */
+export function metricsFor(ex: ExLike): MetricDef[] {
+  if (ex.kind === 'time') {
+    const defs: MetricDef[] = [
+      { key: 'maxReps', label: 'Durée max', unit: 's' },
+      { key: 'totalReps', label: 'Durée totale', unit: 's' },
+    ]
+    if (ex.group !== 'Cardio') defs.push({ key: 'maxWeight', label: ex.bodyweight ? 'Lest max' : 'Poids max', unit: 'kg' })
+    return defs
+  }
+  // Au poids du corps, le poids vaut souvent 0 : on suit le lest et les répétitions.
+  return ex.bodyweight
     ? [
         { key: 'maxWeight', label: 'Lest max', unit: 'kg' },
         { key: 'maxReps', label: 'Reps max', unit: 'reps' },
@@ -54,6 +71,7 @@ export function metricsFor(bodyweight: boolean): MetricDef[] {
 }
 
 export function fmtMetric(def: MetricDef, value: number): string {
+  if (def.unit === 's') return fmtSeconds(value)
   if (def.unit === 'reps') return `${fmtInt(value)} reps`
   if (def.key === 'best1RM') return `${fmtNum1(value)} kg`
   if (def.key === 'volume') return `${fmtInt(value)} kg`
@@ -64,6 +82,8 @@ export function fmtMetric(def: MetricDef, value: number): string {
 export function setsOf(session: Session, exerciseId: string): WorkSet[] {
   return session.exercises.filter((e) => e.exerciseId === exerciseId).flatMap((e) => e.sets)
 }
+
+export const workSets = (sets: WorkSet[]) => sets.filter((s) => !s.warmup)
 
 export interface HistoryPoint {
   sessionId: string
@@ -76,9 +96,9 @@ export function exerciseHistory(sessions: Session[], exerciseId: string): Histor
   const out: HistoryPoint[] = []
   for (const s of sessions) {
     if (s.endedAt === null) continue
-    const sets = setsOf(s, exerciseId)
-    if (sets.length === 0) continue
-    out.push({ sessionId: s.id, date: s.startedAt, stats: statsOfSets(sets) })
+    const stats = statsOfSets(setsOf(s, exerciseId))
+    if (stats.setCount === 0) continue
+    out.push({ sessionId: s.id, date: s.startedAt, stats })
   }
   return out.sort((a, b) => a.date - b.date)
 }
@@ -89,15 +109,15 @@ export interface PersonalRecord {
   date: number
 }
 
-export function personalRecords(history: HistoryPoint[], bodyweight: boolean): PersonalRecord[] {
-  return metricsFor(bodyweight).map((def) => {
+export function personalRecords(history: HistoryPoint[], ex: ExLike): PersonalRecord[] {
+  return metricsFor(ex).map((def) => {
     let best: HistoryPoint | null = null
     for (const p of history) if (!best || p.stats[def.key] > best.stats[def.key]) best = p
     return { def, value: best ? best.stats[def.key] : 0, date: best ? best.date : 0 }
   })
 }
 
-/** Ce qui a été fait la dernière fois sur cet exercice, avant la date donnée. */
+/** Ce qui a été fait la dernière fois sur cet exercice (séries de travail), avant la date donnée. */
 export function lastPerformance(
   sessions: Session[],
   exerciseId: string,
@@ -106,10 +126,41 @@ export function lastPerformance(
   let found: Session | null = null
   for (const s of sessions) {
     if (s.startedAt >= before) continue
-    if (setsOf(s, exerciseId).length === 0) continue
+    if (workSets(setsOf(s, exerciseId)).length === 0) continue
     if (!found || s.startedAt > found.startedAt) found = s
   }
-  return found ? { date: found.startedAt, sets: setsOf(found, exerciseId) } : null
+  return found ? { date: found.startedAt, sets: workSets(setsOf(found, exerciseId)) } : null
+}
+
+export interface Suggestion {
+  weight: number
+  reps: number
+  label: string
+}
+
+/**
+ * Suggestion de progression : si toutes les séries de la dernière fois ont été réussies
+ * (même charge, sans perdre de répétitions), on propose un peu plus.
+ */
+export function suggestNext(last: WorkSet[], ex: ExLike): Suggestion | null {
+  const sets = workSets(last)
+  if (sets.length === 0) return null
+  const first = sets[0]
+  const sameWeight = sets.every((s) => s.weight === first.weight)
+  if (!sameWeight) return null
+  const held = sets.every((s) => s.reps >= first.reps)
+  if (!held) return null
+
+  if (ex.kind === 'time') {
+    const step = ex.group === 'Cardio' ? 60 : 5
+    return { weight: first.weight, reps: first.reps + step, label: `${fmtSeconds(first.reps + step)} (+${step === 60 ? '1 min' : '5 s'})` }
+  }
+  if (ex.bodyweight && first.weight === 0) {
+    return { weight: 0, reps: first.reps + 1, label: `${first.reps + 1} répétitions (+1)` }
+  }
+  const inc = first.weight < 15 ? 1 : 2.5
+  const weight = first.weight + inc
+  return { weight, reps: first.reps, label: `${fmtNum(weight)} kg (+${fmtNum(inc)})` }
 }
 
 export interface SessionTotals {
@@ -119,15 +170,18 @@ export interface SessionTotals {
   volume: number
 }
 
-export function sessionTotals(session: Session, now = Date.now()): SessionTotals {
-  const withSets = session.exercises.filter((e) => e.sets.length > 0)
-  const ids = new Set(withSets.map((e) => e.exerciseId))
+/** Totaux d'une séance (hors échauffement ; le volume ignore les exercices en durée). */
+export function sessionTotals(session: Session, exercises?: Map<string, Exercise>, now = Date.now()): SessionTotals {
+  const ids = new Set<string>()
   let setCount = 0
   let volume = 0
-  for (const e of withSets) {
+  for (const e of session.exercises) {
+    const timed = exercises?.get(e.exerciseId)?.kind === 'time'
     for (const s of e.sets) {
+      if (s.warmup) continue
+      ids.add(e.exerciseId)
       setCount++
-      volume += s.reps * s.weight
+      if (!timed) volume += s.reps * s.weight
     }
   }
   return { durationMs: (session.endedAt ?? now) - session.startedAt, exerciseCount: ids.size, setCount, volume }
@@ -149,13 +203,13 @@ export function recordsBroken(session: Session, sessions: Session[], exercises: 
     const ex = exercises.get(se.exerciseId)
     const current = statsOfSets(setsOf(session, se.exerciseId))
     if (!ex || current.setCount === 0) continue
-    const previous = sessions.filter(
-      (s) => s.id !== session.id && s.startedAt < session.startedAt && setsOf(s, se.exerciseId).length > 0,
-    )
-    if (previous.length === 0) continue // première fois : pas de record « battu »
-    const prevStats = previous.map((s) => statsOfSets(setsOf(s, se.exerciseId)))
+    const prevStats = sessions
+      .filter((s) => s.id !== session.id && s.startedAt < session.startedAt)
+      .map((s) => statsOfSets(setsOf(s, se.exerciseId)))
+      .filter((st) => st.setCount > 0)
+    if (prevStats.length === 0) continue // première fois : pas de record « battu »
     const items: BrokenRecord['items'] = []
-    for (const def of metricsFor(ex.bodyweight)) {
+    for (const def of metricsFor(ex)) {
       const best = Math.max(...prevStats.map((p) => p[def.key]))
       const value = current[def.key]
       if (value > 0 && value > best + 1e-9) items.push({ def, value })
@@ -215,6 +269,32 @@ export function countInMonth(sessions: Session[], now = Date.now()): number {
 
 export const hasSets = (s: Session) => s.exercises.some((e) => e.sets.length > 0)
 
+export interface GroupWeek {
+  group: MuscleGroup
+  sets: number
+  volume: number
+}
+
+/** Séries de travail et volume par groupe musculaire, pour la semaine commençant à weekStart. */
+export function groupWeek(sessions: Session[], exercises: Map<string, Exercise>, weekStart: number): GroupWeek[] {
+  const end = addDays(weekStart, 7)
+  const map = new Map<MuscleGroup, GroupWeek>(MUSCLE_GROUPS.map((g) => [g, { group: g, sets: 0, volume: 0 }]))
+  for (const s of sessions) {
+    if (s.startedAt < weekStart || s.startedAt >= end) continue
+    for (const se of s.exercises) {
+      const ex = exercises.get(se.exerciseId)
+      if (!ex) continue
+      const row = map.get(ex.group)!
+      for (const set of se.sets) {
+        if (set.warmup) continue
+        row.sets++
+        if (ex.kind !== 'time') row.volume += set.reps * set.weight
+      }
+    }
+  }
+  return [...map.values()]
+}
+
 /** Exercices classés par usage : les plus récents d'abord, puis les plus fréquents. */
 export function usageByExercise(sessions: Session[]): Map<string, { count: number; lastUsed: number }> {
   const usage = new Map<string, { count: number; lastUsed: number }>()
@@ -228,4 +308,20 @@ export function usageByExercise(sessions: Session[]): Map<string, { count: numbe
     }
   }
   return usage
+}
+
+export const STANDARD_PLATES = [25, 20, 15, 10, 5, 2.5, 1.25]
+
+/** Disques à mettre de chaque côté de la barre pour atteindre `total`. */
+export function platesFor(total: number, bar: number, plates = STANDARD_PLATES): { perSide: number[]; missing: number } | null {
+  if (total < bar) return null
+  let rest = Math.round(((total - bar) / 2) * 100) / 100
+  const perSide: number[] = []
+  for (const p of plates) {
+    while (rest >= p - 1e-9) {
+      perSide.push(p)
+      rest = Math.round((rest - p) * 100) / 100
+    }
+  }
+  return { perSide, missing: Math.round(rest * 2 * 100) / 100 }
 }

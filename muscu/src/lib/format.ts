@@ -14,15 +14,63 @@ export function fmtSetWeight(weight: number, bodyweight: boolean): string {
   return weight === 0 ? 'PDC' : `PDC + ${fmtKg(weight)}`
 }
 
-/** Résumé de séries : « 3 × 10 à 60 kg » ou « 60 kg × 10, 10, 8 · 57,5 kg × 8 ». */
-export function summarizeSets(sets: { reps: number; weight: number }[], bodyweight: boolean): string {
+type ExLike = { bodyweight: boolean; kind?: 'reps' | 'time'; group: string }
+type SetLike = { reps: number; weight: number; warmup?: boolean }
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/** 90 → « 1:30 » ; 1500 → « 25:00 » ; 3900 → « 1:05:00 » */
+export function fmtSeconds(total: number): string {
+  const s = Math.max(0, Math.round(total))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  return h ? `${h}:${pad2(m)}:${pad2(s % 60)}` : `${m}:${pad2(s % 60)}`
+}
+
+/**
+ * Lit une durée tapée au clavier : « 1:30 » ou « 1,30 » = 1 min 30.
+ * Un nombre seul compte en minutes pour le cardio, en secondes sinon.
+ */
+export function parseDuration(text: string, minutesByDefault: boolean): number | null {
+  const t = text.trim()
+  const ms = t.match(/^(\d+)\s*[:,.hm]\s*(\d{0,2})\s*s?$/i)
+  if (ms) return Number(ms[1]) * 60 + Number(ms[2] || 0)
+  if (/^\d+$/.test(t)) return Number(t) * (minutesByDefault ? 60 : 1)
+  return null
+}
+
+/** Une série : « 60 kg × 10 », « PDC × 8 », « 1:30 », « 1:00 · +10 kg » */
+export function fmtSet(set: SetLike, ex: ExLike): string {
+  if (ex.kind === 'time') {
+    const d = fmtSeconds(set.reps)
+    if (ex.group === 'Cardio' || set.weight === 0) return d
+    return ex.bodyweight ? `${d} · +${fmtKg(set.weight)}` : `${fmtKg(set.weight)} · ${d}`
+  }
+  return `${fmtSetWeight(set.weight, ex.bodyweight)} × ${set.reps}`
+}
+
+/**
+ * Résumé des séries (hors échauffement) : « 3 × 10 à 60 kg »,
+ * « 60 kg × 10, 10, 8 · 57,5 kg × 8 », « 3 × 1:00 », « 25:00 ».
+ */
+export function summarizeSets(allSets: SetLike[], ex: ExLike): string {
+  const sets = allSets.filter((s) => !s.warmup)
   if (sets.length === 0) return ''
-  const w = (x: number) => (bodyweight ? (x === 0 ? 'poids du corps' : `PDC + ${fmtKg(x)}`) : fmtKg(x))
   const first = sets[0]
   const sameWeight = sets.every((s) => s.weight === first.weight)
   const sameReps = sets.every((s) => s.reps === first.reps)
+
+  if (ex.kind === 'time') {
+    const w = first.weight
+    const suffix = ex.group !== 'Cardio' && sameWeight && w > 0 ? (ex.bodyweight ? ` · +${fmtKg(w)}` : ` à ${fmtKg(w)}`) : ''
+    if (sameReps) return `${sets.length > 1 ? `${sets.length} × ` : ''}${fmtSeconds(first.reps)}${suffix}`
+    if (sameWeight) return sets.map((s) => fmtSeconds(s.reps)).join(', ') + suffix
+    return sets.map((s) => fmtSet(s, ex)).join(' · ')
+  }
+
+  const w = (x: number) => (ex.bodyweight ? (x === 0 ? 'poids du corps' : `PDC + ${fmtKg(x)}`) : fmtKg(x))
   if (sameWeight && sameReps) {
-    const at = bodyweight && first.weight === 0 ? 'au poids du corps' : `à ${w(first.weight)}`
+    const at = ex.bodyweight && first.weight === 0 ? 'au poids du corps' : `à ${w(first.weight)}`
     return `${sets.length} × ${first.reps} ${at}`
   }
   const groups: { weight: number; reps: number[] }[] = []

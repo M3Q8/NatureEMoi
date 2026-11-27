@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { getMeta, type Session } from '../../db/db'
+import { db, getMeta, type Session } from '../../db/db'
 import { deleteDemoData, startSession } from '../../db/actions'
 import { useData } from '../../hooks/useData'
 import { useNow } from '../../hooks/useNow'
+import { useNav } from '../../hooks/useNav'
 import { useToast } from '../../components/Toast'
 import { ConfirmSheet } from '../../components/Sheet'
-import { IconPlay, IconRepeat, IconShield } from '../../components/Icons'
+import { IconPlay, IconPlus, IconRepeat, IconShield } from '../../components/Icons'
 import { fmtDayLong, fmtDayShort, plural } from '../../lib/format'
 import { addDays, hasSets, startOfWeek } from '../../lib/stats'
 import { exportData, saveBackupFile } from '../../lib/backup'
@@ -20,11 +21,14 @@ export function StartView() {
   const now = useNow(60_000)
   const [confirmDemo, setConfirmDemo] = useState(false)
   const lastExportAt = useLiveQuery(() => getMeta<number>('lastExportAt'), [], null)
+  const templates = useLiveQuery(() => db.templates.orderBy('name').toArray(), []) ?? []
+  const nav = useNav()
+  const usable = (ids: string[]) => ids.filter((id) => exMap.get(id) && !exMap.get(id)!.archived)
 
   const done = useMemo(() => sessions.filter((s) => s.endedAt !== null && hasSets(s)), [sessions])
 
   // séances à refaire : les plus récentes, sans doublon de programme
-  const templates = useMemo(() => {
+  const recent = useMemo(() => {
     const seen = new Set<string>()
     const out: Session[] = []
     for (const s of done) {
@@ -92,18 +96,67 @@ export function StartView() {
           </div>
         )}
 
-        {templates.length > 0 && (
+        <section aria-labelledby="mes-seances" className="mt-6 flex flex-col gap-2.5">
+          <div className="mx-1 flex items-center justify-between">
+            <h2 id="mes-seances" className="text-[13px] font-bold tracking-[0.06em] text-muted uppercase">
+              Mes séances types
+            </h2>
+            {templates.length > 0 && (
+              <button
+                type="button"
+                onClick={() => nav.goTo('reglages', 'templates')}
+                className="press -my-2 h-11 px-1 text-[15px] font-semibold text-accent"
+              >
+                Modifier
+              </button>
+            )}
+          </div>
+          {templates.map((t) => {
+            const ids = usable(t.exerciseIds)
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => startSession(ids)}
+                className="press flex min-h-[72px] items-center gap-3.5 rounded-[18px] border border-[#2f3a12] bg-surface px-4 py-3 text-left active:bg-raised"
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <strong className="truncate text-[17px] font-bold">{t.name}</strong>
+                  <span className="truncate text-[14px] text-muted">
+                    {ids.length ? ids.map((id) => exMap.get(id)!.name).join(', ') : 'Aucun exercice'}
+                  </span>
+                </span>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink">
+                  <IconPlay size={16} />
+                </span>
+                <span className="sr-only">Démarrer cette séance</span>
+              </button>
+            )
+          })}
+          {templates.length === 0 && (
+            <button
+              type="button"
+              onClick={() => nav.goTo('reglages', 'templates')}
+              className="press flex min-h-14 items-center gap-3 rounded-[18px] border-[1.5px] border-dashed border-[#3a3d44] px-4 py-2 text-left active:bg-raised"
+            >
+              <IconPlus size={20} className="shrink-0 text-accent" />
+              <span className="text-[15px] leading-snug text-soft">Crée tes séances types (Pecs, Jambes…) pour les lancer en 1 tap</span>
+            </button>
+          )}
+        </section>
+
+        {recent.length > 0 && (
           <section aria-labelledby="refaire" className="mt-7 flex flex-col gap-2.5">
             <h2 id="refaire" className="mx-1 mb-0.5 text-[13px] font-bold tracking-[0.06em] text-muted uppercase">
               Refaire une séance précédente
             </h2>
-            {templates.map((s) => {
+            {recent.map((s) => {
               const names = s.exercises.map((e) => exMap.get(e.exerciseId)?.name).filter(Boolean)
               return (
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => startSession(s)}
+                  onClick={() => startSession(s.exercises.map((e) => e.exerciseId))}
                   className="press flex min-h-[72px] items-center gap-3.5 rounded-[18px] border border-[#24262b] bg-surface px-4 py-3 text-left active:bg-raised"
                 >
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">

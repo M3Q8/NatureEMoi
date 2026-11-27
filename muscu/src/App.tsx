@@ -1,5 +1,6 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { DataContext, useLoadAppData } from './hooks/useData'
+import { NavContext, type ReglagesView } from './hooks/useNav'
 import { ToastProvider, ToastSlot } from './components/Toast'
 import { TabBar, type Tab } from './components/TabBar'
 import { SeanceScreen } from './screens/seance/SeanceScreen'
@@ -13,27 +14,39 @@ export function App() {
   const data = useLoadAppData()
   // Pas d'écran d'accueil : l'app s'ouvre toujours sur la séance.
   const [tab, setTab] = useState<Tab>('seance')
+  const [reglagesView, setReglagesView] = useState<ReglagesView>('main')
+  const nav = useMemo(
+    () => ({
+      goTo: (t: Tab, view: ReglagesView = 'main') => {
+        setReglagesView(view)
+        setTab(t)
+      },
+    }),
+    [],
+  )
 
   if (!data) return <div className="h-full bg-bg" />
 
   return (
     <DataContext.Provider value={data}>
-      <ToastProvider>
-        <div className="flex h-full flex-col">
-          <main className="relative min-h-0 flex-1">
-            {tab === 'seance' && <SeanceScreen />}
-            {tab === 'historique' && <HistoriqueScreen />}
-            {tab === 'progres' && (
-              <Suspense fallback={null}>
-                <ProgresScreen />
-              </Suspense>
-            )}
-            {tab === 'reglages' && <ReglagesScreen />}
-            <ToastSlot fallback className="bottom-3" />
-          </main>
-          <TabBar tab={tab} onChange={setTab} sessionActive={!!data.active} />
-        </div>
-      </ToastProvider>
+      <NavContext.Provider value={nav}>
+        <ToastProvider>
+          <div className="flex h-full flex-col">
+            <main className="relative min-h-0 flex-1">
+              {tab === 'seance' && <SeanceScreen />}
+              {tab === 'historique' && <HistoriqueScreen />}
+              {tab === 'progres' && (
+                <Suspense fallback={null}>
+                  <ProgresScreen />
+                </Suspense>
+              )}
+              {tab === 'reglages' && <ReglagesScreen view={reglagesView} onView={setReglagesView} />}
+              <ToastSlot fallback className="bottom-3" />
+            </main>
+            <TabBar tab={tab} onChange={(t) => nav.goTo(t)} sessionActive={!!data.active} />
+          </div>
+        </ToastProvider>
+      </NavContext.Provider>
     </DataContext.Provider>
   )
 }

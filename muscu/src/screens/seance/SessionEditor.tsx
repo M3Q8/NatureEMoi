@@ -1,19 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Exercise, Session, SessionExercise } from '../../db/db'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { getMeta, isCardio, isTimed, type Exercise, type Session, type SessionExercise } from '../../db/db'
 import {
   addExerciseToSession, addSet, deleteSession, finishSession, removeExerciseFromSession, restoreSession,
 } from '../../db/actions'
 import { useData } from '../../hooks/useData'
 import { useNow } from '../../hooks/useNow'
+import { useRestTimer } from '../../hooks/useRestTimer'
+import { unlockAudio } from '../../lib/sound'
 import { useToast, ToastSlot } from '../../components/Toast'
 import { ConfirmSheet } from '../../components/Sheet'
 import { IconChevronLeft, IconPlus, IconTrash } from '../../components/Icons'
 import { fmtDayLong, fmtDuration, fmtTime, plural } from '../../lib/format'
-import { lastPerformance } from '../../lib/stats'
+import { lastPerformance, suggestNext } from '../../lib/stats'
 import { ExerciseCard } from './ExerciseCard'
 import { ExercisePicker } from './ExercisePicker'
 import { EditSetSheet } from './EditSetSheet'
 import { SetDock, type Draft } from './SetDock'
+import { NoteSheet } from './NoteSheet'
+import { PlatesSheet } from './PlatesSheet'
 
 interface Props {
   session: Session
@@ -33,9 +38,10 @@ function initialActive(session: Session): string | null {
 /** Valeurs proposées pour la prochaine série. */
 function defaultDraft(se: SessionExercise, ex: Exercise, sessions: Session[], session: Session): Draft {
   const prev = se.sets.at(-1)
-  if (prev) return { weight: prev.weight, reps: prev.reps }
+  if (prev) return { weight: prev.weight, reps: prev.reps, warmup: prev.warmup }
   const last = lastPerformance(sessions, se.exerciseId, session.startedAt)
   if (last) return { weight: last.sets[0].weight, reps: last.sets[0].reps }
+  if (isTimed(ex)) return { weight: 0, reps: isCardio(ex) ? 20 * 60 : 30 }
   return ex.bodyweight ? { weight: 0, reps: 10 } : { weight: 20, reps: 10 }
 }
 
@@ -50,6 +56,10 @@ export function SessionEditor({ session, mode, onFinished, onBack }: Props) {
   const [editing, setEditing] = useState<{ seId: string; setId: string } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<SessionExercise | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [noteFor, setNoteFor] = useState<Exercise | null>(null)
+  const [plates, setPlates] = useState(false)
+  const rest = useRestTimer()
+  const restSeconds = useLiveQuery(() => getMeta<number>('restSeconds'), []) ?? 90
 
   const activeSe =
     session.exercises.find((e) => e.id === activeId) ?? (live && activeId !== null ? (session.exercises.at(-1) ?? null) : null)
@@ -62,12 +72,22 @@ export function SessionEditor({ session, mode, onFinished, onBack }: Props) {
     if (activeSe) document.getElementById(`se-${activeSe.id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [activeSe?.id])
 
+  const workCount = activeSe ? activeSe.sets.filter((s) => !s.warmup).length : 0
+  const lastActive = activeSe ? lastPerformance(sessions, activeSe.exerciseId, session.startedAt) : null
+  const rawSuggestion = live && activeEx && workCount === 0 && lastActive ? suggestNext(lastActive.sets, activeEx) : null
+  // masquée une fois appliquée
+  const suggestion =
+    rawSuggestion && draft && !draft.warmup && draft.weight === rawSuggestion.weight && draft.reps === rawSuggestion.reps
+      ? null
+      : rawSuggestion
+
   const onAddSet = async () => {
     if (!activeSe || !activeEx || !draft) return
-    const n = activeSe.sets.length + 1
+    unlockAudio() // l'iPhone n'autorise le bip du minuteur qu'après un toucher
     const before = await addSet(session.id, activeSe.id, draft)
     setDrafts((d) => ({ ...d, [activeSe.id]: draft }))
-    toast.show(`Série ${n} ajoutée`, before ? () => restoreSession(before) : undefined)
+    toast.show(draft.warmup ? 'Échauffement ajouté' : `Série ${workCount + 1} ajoutée`, before ? () => restoreSession(before) : undefined)
+    if (live && restSeconds > 0) rest.start(restSeconds)
   }
 
   const onPick = async (exerciseId: string) => {
@@ -147,6 +167,11 @@ export function SessionEditor({ session, mode, onFinished, onBack }: Props) {
                 active={isActive}
                 live={live}
                 last={lastPerformance(sessions, se.exerciseId, session.startedAt)}
+                suggestion={isActive ? suggestion : null}
+                onApplySuggestion={() =>
+                  suggestion && setDrafts((d) => ({ ...d, [se.id]: { weight: suggestion.weight, reps: suggestion.reps } }))
+                }
+                onEditNote={() => setNoteFor(ex)}
                 onActivate={() => setActiveId(isActive && !live ? null : se.id)}
                 onEditSet={(setId) => setEditing({ seId: se.id, setId })}
                 onRemove={() => (se.sets.length > 0 ? setConfirmRemove(se) : removeSe(se))}
@@ -191,10 +216,12 @@ export function SessionEditor({ session, mode, onFinished, onBack }: Props) {
         {activeSe && activeEx && draft ? (
           <SetDock
             ex={activeEx}
-            setNumber={activeSe.sets.length + 1}
+            setNumber={workCount + 1}
             draft={draft}
             onDraft={(d) => setDrafts((all) => ({ ...all, [activeSe.id]: d }))}
             onAdd={onAddSet}
+            rest={live ? rest : null}
+            onPlates={() => setPlates(true)}
           />
         ) : live ? (
           <div className="px-4 pt-2 pb-3">
@@ -211,6 +238,8 @@ export function SessionEditor({ session, mode, onFinished, onBack }: Props) {
       </div>
 
       {picking && <ExercisePicker onClose={() => setPicking(false)} onPick={onPick} inSession={inSession} />}
+      {noteFor && <NoteSheet ex={exMap.get(noteFor.id) ?? noteFor} onClose={() => setNoteFor(null)} />}
+      {plates && draft && <PlatesSheet weight={draft.weight} onClose={() => setPlates(false)} />}
       {editing && (
         <EditSetSheet
           key={editing.setId}

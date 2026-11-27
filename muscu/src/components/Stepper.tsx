@@ -57,10 +57,26 @@ interface StepperProps {
   decimal?: boolean
   /** texte des boutons pour les lecteurs d'écran, ex. « 2,5 kg » */
   stepLabel: string
+  /** affichage personnalisé (ex. durée « 1:30 ») */
+  format?: (v: number) => string
+  /** lecture personnalisée de la saisie au clavier */
+  parse?: (text: string) => number | null
 }
 
 /** Gros chiffre + boutons − / +. Toucher le chiffre permet de le taper au clavier numérique. */
-export function Stepper({ label, value, onChange, step, min = 0, max = 9999, unit, decimal = false, stepLabel }: StepperProps) {
+export function Stepper({
+  label,
+  value,
+  onChange,
+  step,
+  min = 0,
+  max = 9999,
+  unit,
+  decimal = false,
+  stepLabel,
+  format,
+  parse,
+}: StepperProps) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState('')
   const latest = useRef(value)
@@ -75,12 +91,12 @@ export function Stepper({ label, value, onChange, step, min = 0, max = 9999, uni
     latest.current = next
     onChange(next)
   }
-  const display = decimal ? fmtNum(value) : String(value)
+  const display = format ? format(value) : decimal ? fmtNum(value) : String(value)
   const shown = editing ? text : display
 
   const commit = () => {
     setEditing(false)
-    const n = parseNumber(text)
+    const n = parse ? parse(text) : parseNumber(text)
     if (n === null || text.trim() === '') return
     const next = clean(n)
     if (next !== value) onChange(next)
@@ -97,7 +113,7 @@ export function Stepper({ label, value, onChange, step, min = 0, max = 9999, uni
           <input
             aria-label={label}
             value={shown}
-            inputMode={decimal ? 'decimal' : 'numeric'}
+            inputMode={decimal || format ? 'decimal' : 'numeric'}
             enterKeyHint="done"
             autoComplete="off"
             onFocus={(e) => {

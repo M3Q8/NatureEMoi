@@ -50,10 +50,11 @@ export function ExercisePicker({ onClose, onPick, inSession }: Props) {
     if (inSession.has(e.id)) return 'Déjà dans la séance'
     if (recent) {
       const last = lastPerformance(sessions, e.id, Infinity)
-      if (last) return `Dernière fois : ${summarizeSets(last.sets, e.bodyweight)}`
+      if (last) return `Dernière fois : ${summarizeSets(last.sets, e)}`
     }
-    if (q) return e.group + (e.bodyweight ? ' · poids du corps' : '')
-    return e.bodyweight ? 'Poids du corps' : null
+    const tags = [e.kind === 'time' && e.group !== 'Cardio' && 'En durée', e.bodyweight && 'Poids du corps'].filter(Boolean).join(' · ')
+    if (q) return e.group + (tags ? ` · ${tags.toLowerCase()}` : '')
+    return tags || null
   }
 
   const trimmed = q.trim()
