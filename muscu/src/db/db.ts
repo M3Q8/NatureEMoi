@@ -1,6 +1,5 @@
 import Dexie, { type Table } from 'dexie'
 import { seedExercises } from './seed'
-import { makeDemoSessions } from './demo'
 
 export const MUSCLE_GROUPS = ['Pectoraux', 'Dos', 'Épaules', 'Biceps', 'Triceps', 'Jambes', 'Abdos'] as const
 export type MuscleGroup = (typeof MUSCLE_GROUPS)[number]
@@ -55,21 +54,25 @@ export class MuscuDB extends Dexie {
 
   constructor(name = 'muscu') {
     super(name)
-    this.version(1).stores({
+    const schema = {
       exercises: 'id, name, group',
       sessions: 'id, startedAt',
       meta: 'key',
+    }
+    this.version(1).stores(schema)
+    // v2 : l'app démarre vide. Les séances de démonstration déjà présentes sont retirées.
+    this.version(2)
+      .stores(schema)
+      .upgrade((tx) => tx.table('sessions').filter((s: Session) => !!s.demo).delete())
+
+    // Premier lancement : seulement la liste d'exercices de départ.
+    this.on('populate', (tx) => {
+      tx.table('exercises').bulkAdd(seedExercises())
     })
   }
 }
 
 export const db = new MuscuDB()
-
-// Premier lancement : liste d'exercices de départ + données de démonstration.
-db.on('populate', (tx) => {
-  tx.table('exercises').bulkAdd(seedExercises())
-  tx.table('sessions').bulkAdd(makeDemoSessions())
-})
 
 export async function getMeta<T>(key: string): Promise<T | undefined> {
   const row = await db.meta.get(key)
